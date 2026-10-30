@@ -166,7 +166,7 @@
     const out = []; let page = "";
     do {
       const r = await api(`/${col}?pageSize=300${page ? "&pageToken=" + page : ""}`, {}, true);
-      if (!r.ok) throw new Error("Could not load data.");
+      if (!r.ok) throw new Error("Could not load " + col + " (error " + r.status + ").");
       const j = await r.json();
       for (const d of j.documents || []) out.push(mapDoc(d));
       page = j.nextPageToken || "";
@@ -176,7 +176,7 @@
   const docId = d => d.name.split("/").pop();
 
   async function listParticipants() {
-    if (!fb) return ls.get("participants", []);
+    if (!fb) { const p = ls.get("participants", []); return p.length ? p : parseIds(configRangesText()).ids; }
     return listDocs("participants", docId);
   }
   async function listVoters() {
