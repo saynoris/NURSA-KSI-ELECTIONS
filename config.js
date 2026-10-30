@@ -47,6 +47,7 @@ window.VOTE_CONFIG = {
   // Format: prefix + number. Also shown pre-filled in the admin page for convenience.
   allowedRanges: [
     "224NSK1100001-224NSK1100300",
+    "225NSK1100001-225NSK1100300",
     "225NSK0100001-225NSK0100300",
     "226NSK0100001-226NSK0100150",
     "227NSK0100001-227NSK0100120",
