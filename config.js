@@ -40,7 +40,8 @@ window.VOTE_CONFIG = {
   // Shared database so every device is counted together and the admin page works.
   // Leave as null for DEMO mode (everything stays in this browser only).
   // Real use: { projectId: "my-project", apiKey: "AIza..." }  (see README.md)
-  sheets: { url: "https://script.google.com/macros/s/AKfycb.../exec" },
+  firebase: null,
+  sheets: { https://script.google.com/macros/s/AKfycbzRtglFAZqEKtPElJ5OZnQOwA64RM9JHhNAK6P_1idx2CSCq3LlYaXIv2ZP_5YaZVjN/exec},
 
   // Demo mode only: IDs allowed when no participant list has been uploaded yet.
   // Write each range as TEXT in quotes, first ID - last ID. (Never type the numbers bare: a leading 0 breaks them.)
