@@ -215,7 +215,11 @@
     async signIn(email, password) {
       pw = password;
       try { await adminCall({ action: "login" }); }
-      catch (e) { pw = null; throw new Error("Wrong password."); }
+      catch (e) {
+        pw = null;
+        if (/Not authorised/.test(e.message)) throw new Error("Wrong password.");
+        throw new Error("Could not sign in: " + e.message + " (this is not a password problem; check the Apps Script deployment)");
+      }
       try { sessionStorage.setItem("sheetsPw", pw); } catch {}
     },
     signOut() { pw = null; try { sessionStorage.clear(); } catch {} },
