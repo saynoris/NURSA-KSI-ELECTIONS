@@ -43,7 +43,8 @@ window.VOTE_CONFIG = {
   // OR use Google Sheets as the database (see README, "Google Sheets mode").
   // Paste the Apps Script web app URL: { url: "https://script.google.com/macros/s/XXXX/exec" }
   // If both firebase and sheets are set, sheets is used.
-  sheets: null,
+  
+  sheets: { url: "https://script.google.com/macros/s/AKfycbzRtglFAZqEKtPElJ5OZnQOwA64RM9JHhNAK6P_1idx2CSCq3LlYaXIv2ZP_5YaZVjN/exec" },
 
   // Demo mode only: IDs allowed when no participant list has been uploaded yet.
   // Format: prefix + number. Also shown pre-filled in the admin page for convenience.
