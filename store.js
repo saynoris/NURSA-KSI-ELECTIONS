@@ -30,8 +30,9 @@
 
   function configRangesText() {
     return (C.allowedRanges || []).map(r => {
+      if (typeof r === "string") return r;                       // "224NSK1100001-224NSK1100300"
       const a = r.prefix + String(r.from).padStart(7, "0"), b = r.prefix + String(r.to).padStart(7, "0");
-      return a + "-" + b;
+      return a + "-" + b;                                        // old { prefix, from, to } form
     }).join("\n");
   }
 
@@ -47,10 +48,27 @@
     const url = `${BASE}${path}${path.includes("?") ? "&" : "?"}${KEY}`;
     const headers = { "Content-Type": "application/json" };
     if (admin && token) headers.Authorization = "Bearer " + token;
-    const r = await fetch(url, { ...opts, headers });
+    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);
+    let r;
+    try { r = await fetch(url, { ...opts, headers, signal: ctl.signal }); }
+    catch (e) { throw new Error("Cannot reach the voting database. Check your internet connection and try again."); }
+    finally { clearTimeout(timer); }
     if (admin && (r.status === 401 || r.status === 403))
       throw new Error("Not authorised. Please sign in again as the admin (and check the Firestore rules).");
     return r;
+  }
+
+  // Turn an unexpected Firestore response into a message that says what to fix
+  async function bad(r) {
+    let m = ""; try { const j = await r.clone().json(); m = (j.error && j.error.message) || ""; } catch (e) {}
+    if (r.status === 400 && /api key/i.test(m)) throw new Error("The apiKey in config.js is not valid. Copy it again from Firebase > Project settings.");
+    if (/has not been used|is disabled|does not exist for project|database.*not.*(exist|found)/i.test(m) || (r.status === 404 && /database/i.test(m)))
+      throw new Error("The Firestore database has not been created yet. In Firebase open Databases & Storage > Firestore Database > Create database.");
+    if (r.status === 403) throw new Error("The database refused access. In Firebase open Firestore Database > Rules, paste the rules from firestore.rules, and click Publish.");
+    throw new Error("Voting server error (" + r.status + "). Please try again.");
+  }
+  async function dbMissing(r) {   // is this 404 a missing database, rather than a missing document?
+    try { const j = await r.clone().json(); return /database/i.test((j.error && j.error.message) || ""); } catch (e) { return false; }
   }
 
   const NET = "Could not reach the voting server. Please try again.";
@@ -65,8 +83,8 @@
     }
     const r = await api(`/participants/${id}`);
     if (r.status === 200) return true;
-    if (r.status === 404) return false;
-    throw new Error(NET);
+    if (r.status === 404) { if (await dbMissing(r)) await bad(r); return false; }
+    await bad(r);
   }
 
   async function hasVoted(id) {
@@ -75,7 +93,7 @@
     const r = await api(`/voters/${id}`);
     if (r.status === 200) return true;
     if (r.status === 404) return false;
-    throw new Error(NET);
+    await bad(r);
   }
 
   // Marks the ID as used. Returns false if it was already used.
@@ -91,7 +109,8 @@
       body: JSON.stringify({ fields: { ts: { timestampValue: new Date().toISOString() } } })
     });
     if (r.status === 409) return false;
-    if (!r.ok) throw new Error(NET);
+    if (r.status === 403) throw new Error("Your vote was not accepted. Voting may have just been closed, or this ID is not on the voter list.");
+    if (!r.ok) await bad(r);
     return true;
   }
 
@@ -101,7 +120,8 @@
     const fields = {};
     for (const [k, v] of Object.entries(choices)) fields[k] = { stringValue: v };
     const r = await api(`/ballots`, { method: "POST", body: JSON.stringify({ fields }) });
-    if (!r.ok) throw new Error("Could not save your ballot. Please try again.");
+    if (r.status === 403) throw new Error("Your vote was not accepted. Voting may have just been closed.");
+    if (!r.ok) await bad(r);
   }
 
   // ---------- Election open/closed switch ----------
@@ -109,7 +129,7 @@
     if (!fb) return ls.get("electionOpen", true);
     const r = await api(`/settings/election`);
     if (r.status === 404) return true;            // never set = open
-    if (!r.ok) throw new Error(NET);
+    if (!r.ok) await bad(r);
     const j = await r.json();
     return !(j.fields && j.fields.open && j.fields.open.booleanValue === false);
   }
