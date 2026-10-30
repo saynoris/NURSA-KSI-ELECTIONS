@@ -1,0 +1,217 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin</title>
+<style>
+  :root { --bg:#f4f6fb; --ink:#1b2333; --muted:#6b7488; --accent:#2f5bea; --err:#c62828; --ok:#1b7f3b; }
+  * { box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--ink); margin:0; }
+  main { max-width: 760px; margin:0 auto; padding:24px 16px 48px; }
+  .card { background:#fff; border-radius:14px; padding:20px; box-shadow:0 2px 10px rgba(20,30,60,.08); margin-bottom:16px; }
+  h1 { margin:8px 0 16px; } h2 { margin-top:0; font-size:1.15rem; }
+  input[type=text], input[type=email], input[type=password], textarea { width:100%; padding:10px; font-size:1rem; border:1px solid #cfd6e4; border-radius:10px; margin-bottom:10px; font-family:inherit; }
+  textarea { min-height:130px; font-family:monospace; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:10px; padding:10px 16px; cursor:pointer; margin:4px 8px 4px 0; font-size:.95rem; }
+  button.sec { background:#e7ecfb; color:var(--accent); } button.danger { background:#fdecec; color:var(--err); }
+  button:disabled { opacity:.5; }
+  .tabs { display:flex; gap:8px; margin-bottom:16px; } .tabs button { margin:0; }
+  .tabs button.active { background:var(--accent); color:#fff; }
+  .muted { color:var(--muted); font-size:.9rem; } .err { color:var(--err); } .ok { color:var(--ok); }
+  .hidden { display:none; }
+  .bar { background:#e7ecfb; border-radius:6px; height:16px; margin:3px 0 10px; } .bar > div { background:var(--accent); height:100%; border-radius:6px; }
+  .ids { max-height:200px; overflow:auto; font-family:monospace; font-size:.85rem; background:#f7f8fc; border-radius:8px; padding:8px; }
+  .stat { display:inline-block; background:#eef2ff; border-radius:10px; padding:8px 14px; margin:0 8px 8px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Admin</h1>
+  <div id="demo" class="card muted hidden">Demo mode: data is stored only in this browser. Connect Firebase (see README) for real voting.</div>
+
+  <section id="login" class="card hidden">
+    <h2>Sign in</h2>
+    <input id="email" type="email" placeholder="Admin email" autocomplete="username">
+    <input id="pw" type="password" placeholder="Password" autocomplete="current-password">
+    <button id="signin">Sign in</button>
+    <div id="login-msg" class="err"></div>
+  </section>
+
+  <section id="app" class="hidden">
+    <div class="card" id="status-card">
+      <h2>Election status</h2>
+      <div id="status-badge" class="stat">Checking...</div>
+      <button id="toggle-election" disabled>...</button>
+      <div id="status-msg" class="muted"></div>
+      <p class="muted">When closed, voters see "Voting is closed" and nobody can submit a vote. You can reopen at any time.</p>
+    </div>
+    <div class="tabs">
+      <button id="t-part" class="active">Participants</button>
+      <button id="t-res">Results</button>
+      <button id="out" class="sec" style="margin-left:auto">Sign out</button>
+    </div>
+
+    <div id="p-part">
+      <div class="card">
+        <h2>Upload participants</h2>
+        <p class="muted">Paste IDs (one per line or comma-separated) and/or ranges like <code>224NSK1100001-224NSK1100130</code>, or choose a .csv / .txt file (IDs in the first column).</p>
+        <input id="file" type="file" accept=".csv,.txt,text/plain,text/csv">
+        <textarea id="ids" placeholder="224NSK1100001-224NSK1100130&#10;226NSK0100005"></textarea>
+        <button id="prefill" class="sec">Fill with ranges from config.js</button>
+        <button id="preview" class="sec">Preview</button>
+        <button id="add">Add participants</button>
+        <button id="remove" class="danger">Remove these</button>
+        <div id="p-msg" class="muted"></div>
+      </div>
+      <div class="card">
+        <h2>Registered participants</h2>
+        <div id="count" class="stat">–</div>
+        <button id="refresh" class="sec">Refresh list</button>
+        <button id="clear" class="danger">Delete all</button>
+        <input id="filter" type="text" placeholder="Search IDs...">
+        <div id="list" class="ids"></div>
+      </div>
+    </div>
+
+    <div id="p-res" class="card hidden">
+      <h2>Results</h2>
+      <button id="load">Load / refresh results</button>
+      <button id="dl-res" class="sec hidden">Download results (CSV)</button>
+      <button id="dl-non" class="sec hidden">Download who has not voted (CSV)</button>
+      <div id="results"></div>
+    </div>
+  </section>
+</main>
+
+<script src="config.js"></script>
+<script src="store.js"></script>
+<script>
+const C = window.VOTE_CONFIG, S = window.VoteStore, $ = id => document.getElementById(id);
+const show = (el, on) => el.classList.toggle("hidden", !on);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+let participants = [], lastResults = null, nonVoters = [];
+
+function start() {
+  show($("demo"), !C.firebase);
+  const ok = S.signedIn();
+  show($("login"), !ok); show($("app"), ok);
+  show($("out"), !!C.firebase);
+  if (ok) { refreshList(); refreshStatus(); }
+}
+let electionOpen = true;
+async function refreshStatus() {
+  try {
+    electionOpen = await S.isElectionOpen();
+    const b = $("status-badge");
+    b.textContent = electionOpen ? "Voting is OPEN" : "Voting is CLOSED";
+    b.style.background = electionOpen ? "#e6f4ea" : "#fdecec"; b.style.color = electionOpen ? "#1b7f3b" : "#c62828"; b.style.fontWeight = "700";
+    const t = $("toggle-election"); t.disabled = false;
+    t.textContent = electionOpen ? "Close the election" : "Open the election";
+    t.className = electionOpen ? "danger" : "";
+  } catch (e) { $("status-msg").textContent = e.message; $("status-msg").className = "err"; }
+}
+$("toggle-election").onclick = async () => {
+  const closing = electionOpen;
+  if (!confirm(closing ? "Close the election now? Voters will no longer be able to vote." : "Open the election now? Eligible students will be able to vote.")) return;
+  const m = $("status-msg"); m.className = "muted"; m.textContent = "Saving...";
+  try { await S.setElectionOpen(!closing); m.textContent = closing ? "Election closed." : "Election opened."; m.className = "ok"; await refreshStatus(); }
+  catch (e) { m.textContent = e.message; m.className = "err"; }
+};
+
+$("signin").onclick = async () => {
+  $("login-msg").textContent = "";
+  try { await S.signIn($("email").value.trim(), $("pw").value); $("pw").value = ""; start(); }
+  catch (e) { $("login-msg").textContent = e.message; }
+};
+$("pw").addEventListener("keydown", e => { if (e.key === "Enter") $("signin").click(); });
+$("out").onclick = () => { S.signOut(); start(); };
+
+$("t-part").onclick = () => tab(true); $("t-res").onclick = () => tab(false);
+function tab(p) {
+  show($("p-part"), p); show($("p-res"), !p);
+  $("t-part").classList.toggle("active", p); $("t-res").classList.toggle("active", !p);
+}
+
+// ----- Participants -----
+function msg(text, cls) { const m = $("p-msg"); m.textContent = text; m.className = cls || "muted"; }
+$("file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    const lines = String(rd.result).split(/\r?\n/).map(l => l.split(/[,\t;]/)[0].trim()).filter(Boolean);
+    $("ids").value = ($("ids").value ? $("ids").value + "\n" : "") + lines.join("\n");
+    msg(`Loaded ${lines.length} line(s) from ${f.name}. Click Preview or Add participants.`);
+  };
+  rd.readAsText(f); e.target.value = "";
+};
+$("prefill").onclick = () => { $("ids").value = S.configRangesText(); doPreview(); };
+function doPreview() {
+  const r = S.parseIds($("ids").value);
+  let t = `${r.ids.length} unique ID(s) recognised.`;
+  if (r.invalid.length) t += ` ${r.invalid.length} could not be read: ${r.invalid.slice(0, 6).join(", ")}${r.invalid.length > 6 ? "…" : ""}`;
+  msg(t, r.invalid.length ? "err" : "ok"); return r;
+}
+$("preview").onclick = doPreview;
+$("add").onclick = async () => {
+  const r = doPreview(); if (!r.ids.length) return;
+  if (r.invalid.length && !confirm(`${r.invalid.length} entries could not be read and will be skipped. Continue?`)) return;
+  try { msg("Uploading..."); await S.addParticipants(r.ids); msg(`Added ${r.ids.length} participant(s).`, "ok"); $("ids").value = ""; refreshList(); }
+  catch (e) { msg(e.message, "err"); }
+};
+$("remove").onclick = async () => {
+  const r = doPreview(); if (!r.ids.length || !confirm(`Remove ${r.ids.length} participant(s)?`)) return;
+  try { await S.removeParticipants(r.ids); msg(`Removed ${r.ids.length}.`, "ok"); refreshList(); } catch (e) { msg(e.message, "err"); }
+};
+$("clear").onclick = async () => {
+  if (!participants.length || !confirm(`Delete ALL ${participants.length} participants? Nobody will be able to vote until you upload a new list.`)) return;
+  try { await S.removeParticipants(participants); msg("All participants deleted.", "ok"); refreshList(); } catch (e) { msg(e.message, "err"); }
+};
+$("refresh").onclick = refreshList; $("filter").oninput = renderList;
+async function refreshList() {
+  try { participants = (await S.listParticipants()).sort(); renderList(); }
+  catch (e) { msg(e.message, "err"); }
+}
+function renderList() {
+  const q = $("filter").value.trim().toUpperCase();
+  const shown = participants.filter(x => x.includes(q));
+  $("count").textContent = `${participants.length} participant(s)`;
+  $("list").innerHTML = shown.slice(0, 300).map(esc).join("<br>") + (shown.length > 300 ? `<br>… and ${shown.length - 300} more` : "") || "<span class='muted'>No participants yet.</span>";
+}
+
+// ----- Results -----
+$("load").onclick = async () => {
+  const box = $("results"); box.textContent = "Loading...";
+  try {
+    const [ballots, voters, parts] = await Promise.all([S.loadBallots(), S.listVoters(), S.listParticipants()]);
+    const vs = new Set(voters);
+    nonVoters = parts.filter(x => !vs.has(x)).sort();
+    const pct = parts.length ? Math.round(voters.length / parts.length * 100) : 0;
+    box.innerHTML = `<div class="stat"><b>${ballots.length}</b> ballots</div><div class="stat"><b>${voters.length}</b> of ${parts.length} voted (${pct}%)</div>`;
+    if (ballots.length !== voters.length) box.innerHTML += `<p class="muted">Note: ballots (${ballots.length}) and voters (${voters.length}) differ. This can happen if a vote was interrupted midway.</p>`;
+    lastResults = [["Position", "Option", "Votes"]];
+    for (const p of C.positions) {
+      const counts = {}; [...p.candidates.map(c => typeof c === "string" ? c : c.name), "Abstain"].forEach(n => counts[n] = 0);
+      ballots.forEach(b => { if (b[p.id] in counts) counts[b[p.id]]++; });
+      const max = Math.max(1, ...Object.values(counts)), div = document.createElement("div");
+      div.innerHTML = `<h3>${esc(p.title)}</h3>` + Object.entries(counts).map(([n, c]) => {
+        lastResults.push([p.title, n, c]);
+        return `<div>${esc(n)}: <b>${c}</b></div><div class="bar"><div style="width:${c / max * 100}%"></div></div>`;
+      }).join("");
+      box.appendChild(div);
+    }
+    show($("dl-res"), true); show($("dl-non"), true);
+  } catch (e) { box.innerHTML = `<span class="err">${esc(e.message)}</span>`; }
+};
+function download(name, rows) {
+  const csv = rows.map(r => [].concat(r).map(v => `"${String(v).replace(/"/g, '""')}"`).join(",")).join("\n");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" })); a.download = name; a.click();
+}
+$("dl-res").onclick = () => download("results.csv", lastResults);
+$("dl-non").onclick = () => download("not-voted.csv", [["Student ID"], ...nonVoters]);
+
+start();
+</script>
+</body>
+</html>
