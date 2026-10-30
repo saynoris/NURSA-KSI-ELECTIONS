@@ -5,7 +5,7 @@ window.VOTE_CONFIG = {
 
   // Each candidate: name + photo path. Replace the sample files in /photos with real pictures
   // (keep the same file name, or change the path here, e.g. "photos/evans.jpg").
-  // A President/VP ticket has two photos: photo: ["photos/a.jpg", "photos/b.jpg"]
+  // A President/VP ticket has two photos: photo: ["photos/a.jpg", "photos/b.jpg"].
 
   positions: [
     { id: "president", title: "President & Vice President", candidates: [
