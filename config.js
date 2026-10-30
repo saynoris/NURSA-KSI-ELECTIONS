@@ -38,7 +38,7 @@ window.VOTE_CONFIG = {
   // Shared database so every device is counted together and the admin page works.
   // Leave as null for DEMO mode (everything stays in this browser only).
   // Real use: { projectId: "my-project", apiKey: "AIza..." }  (see README.md)
-  firebase: { projectId: "vvu-nursa-election-hub-ebc29", apiKey: "AIzaSyDkFlDTKD7DAHlfnGr8Fd4AjAmiB87-e4M" },
+  firebase: null,
 
   // Demo mode only: IDs allowed when no participant list has been uploaded yet.
   // Write each range as TEXT in quotes, first ID - last ID. (Never type the numbers bare: a leading 0 breaks them.)
