@@ -44,7 +44,7 @@ window.VOTE_CONFIG = {
   // Paste the Apps Script web app URL: { url: "https://script.google.com/macros/s/XXXX/exec" }
   // If both firebase and sheets are set, sheets is used.
   
-  sheets: { url: "https://script.google.com/macros/s/AKfycbzRtglFAZqEKtPElJ5OZnQOwA64RM9JHhNAK6P_1idx2CSCq3LlYaXIv2ZP_5YaZVjN/exec" },
+  sheets: { url: "https://script.google.com/macros/s/AKfycbwLiRHaD6MGwLL80CjVIsDO7GHkrfbIJeLOxLfdNR7rk5bkJWq4X0S0pnuIadlCJ5Bd/exec" },
 
   // Demo mode only: IDs allowed when no participant list has been uploaded yet.
   // Format: prefix + number. Also shown pre-filled in the admin page for convenience.
