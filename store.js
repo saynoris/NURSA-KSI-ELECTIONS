@@ -30,9 +30,8 @@
 
   function configRangesText() {
     return (C.allowedRanges || []).map(r => {
-      if (typeof r === "string") return r;                       // "224NSK1100001-224NSK1100300"
       const a = r.prefix + String(r.from).padStart(7, "0"), b = r.prefix + String(r.to).padStart(7, "0");
-      return a + "-" + b;                                        // old { prefix, from, to } form
+      return a + "-" + b;
     }).join("\n");
   }
 
@@ -48,27 +47,10 @@
     const url = `${BASE}${path}${path.includes("?") ? "&" : "?"}${KEY}`;
     const headers = { "Content-Type": "application/json" };
     if (admin && token) headers.Authorization = "Bearer " + token;
-    const ctl = new AbortController(), timer = setTimeout(() => ctl.abort(), 20000);
-    let r;
-    try { r = await fetch(url, { ...opts, headers, signal: ctl.signal }); }
-    catch (e) { throw new Error("Cannot reach the voting database. Check your internet connection and try again."); }
-    finally { clearTimeout(timer); }
+    const r = await fetch(url, { ...opts, headers });
     if (admin && (r.status === 401 || r.status === 403))
       throw new Error("Not authorised. Please sign in again as the admin (and check the Firestore rules).");
     return r;
-  }
-
-  // Turn an unexpected Firestore response into a message that says what to fix
-  async function bad(r) {
-    let m = ""; try { const j = await r.clone().json(); m = (j.error && j.error.message) || ""; } catch (e) {}
-    if (r.status === 400 && /api key/i.test(m)) throw new Error("The apiKey in config.js is not valid. Copy it again from Firebase > Project settings.");
-    if (/has not been used|is disabled|does not exist for project|database.*not.*(exist|found)/i.test(m) || (r.status === 404 && /database/i.test(m)))
-      throw new Error("The Firestore database has not been created yet. In Firebase open Databases & Storage > Firestore Database > Create database.");
-    if (r.status === 403) throw new Error("The database refused access. In Firebase open Firestore Database > Rules, paste the rules from firestore.rules, and click Publish.");
-    throw new Error("Voting server error (" + r.status + "). Please try again.");
-  }
-  async function dbMissing(r) {   // is this 404 a missing database, rather than a missing document?
-    try { const j = await r.clone().json(); return /database/i.test((j.error && j.error.message) || ""); } catch (e) { return false; }
   }
 
   const NET = "Could not reach the voting server. Please try again.";
@@ -83,8 +65,8 @@
     }
     const r = await api(`/participants/${id}`);
     if (r.status === 200) return true;
-    if (r.status === 404) { if (await dbMissing(r)) await bad(r); return false; }
-    await bad(r);
+    if (r.status === 404) return false;
+    throw new Error(NET);
   }
 
   async function hasVoted(id) {
@@ -93,7 +75,7 @@
     const r = await api(`/voters/${id}`);
     if (r.status === 200) return true;
     if (r.status === 404) return false;
-    await bad(r);
+    throw new Error(NET);
   }
 
   // Marks the ID as used. Returns false if it was already used.
@@ -109,8 +91,7 @@
       body: JSON.stringify({ fields: { ts: { timestampValue: new Date().toISOString() } } })
     });
     if (r.status === 409) return false;
-    if (r.status === 403) throw new Error("Your vote was not accepted. Voting may have just been closed, or this ID is not on the voter list.");
-    if (!r.ok) await bad(r);
+    if (!r.ok) throw new Error(NET);
     return true;
   }
 
@@ -120,15 +101,7 @@
     const fields = {};
     for (const [k, v] of Object.entries(choices)) fields[k] = { stringValue: v };
     const r = await api(`/ballots`, { method: "POST", body: JSON.stringify({ fields }) });
-    if (r.status === 403) throw new Error("Your vote was not accepted. Voting may have just been closed.");
-    if (!r.ok) await bad(r);
-  }
-
-  // ---------- Admin passcode (used when no Firebase login is available) ----------
-  async function hashPass(p) {
-    const d = new TextEncoder().encode("nursa-admin:" + String(p).trim());
-    const b = await crypto.subtle.digest("SHA-256", d);
-    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+    if (!r.ok) throw new Error("Could not save your ballot. Please try again.");
   }
 
   // ---------- Election open/closed switch ----------
@@ -136,7 +109,7 @@
     if (!fb) return ls.get("electionOpen", true);
     const r = await api(`/settings/election`);
     if (r.status === 404) return true;            // never set = open
-    if (!r.ok) await bad(r);
+    if (!r.ok) throw new Error(NET);
     const j = await r.json();
     return !(j.fields && j.fields.open && j.fields.open.booleanValue === false);
   }
@@ -166,7 +139,7 @@
     const out = []; let page = "";
     do {
       const r = await api(`/${col}?pageSize=300${page ? "&pageToken=" + page : ""}`, {}, true);
-      if (!r.ok) throw new Error("Could not load " + col + " (error " + r.status + ").");
+      if (!r.ok) throw new Error("Could not load data.");
       const j = await r.json();
       for (const d of j.documents || []) out.push(mapDoc(d));
       page = j.nextPageToken || "";
@@ -176,7 +149,7 @@
   const docId = d => d.name.split("/").pop();
 
   async function listParticipants() {
-    if (!fb) { const p = ls.get("participants", []); return p.length ? p : parseIds(configRangesText()).ids; }
+    if (!fb) return ls.get("participants", []);
     return listDocs("participants", docId);
   }
   async function listVoters() {
@@ -208,8 +181,54 @@
     await commit(ids.map(id => ({ delete: `${DB}/participants/${id}` })));
   }
 
-  window.VoteStore = {
-    norm, parseIds, configRangesText, hashPass, isElectionOpen, setElectionOpen, isAllowed, hasVoted, claimVoter, saveBallot,
+  // ====================== Google Sheets mode (Apps Script web app) ======================
+  const sx = C.sheets;
+  async function call(payload) {
+    let r;
+    try {
+      // No Content-Type header on purpose: keeps it a "simple" request (no CORS preflight).
+      r = await fetch(sx.url, { method: "POST", body: JSON.stringify(payload) });
+    } catch { throw new Error(NET); }
+    if (!r.ok) throw new Error(NET);
+    let j; try { j = await r.json(); } catch { throw new Error(NET); }
+    if (j.error === "unauthorised") throw new Error("Not authorised. Please sign in again.");
+    if (j.error) throw new Error(j.error);
+    return j;
+  }
+  let pw = null;
+  try { pw = sessionStorage.getItem("sheetsPw"); } catch {}
+  const adminCall = p => call({ ...p, pw });
+
+  const sheetsStore = {
+    norm, parseIds, configRangesText,
+    async isElectionOpen() { return (await call({ action: "status" })).open; },
+    async setElectionOpen(open) { await adminCall({ action: "setOpen", open: !!open }); },
+    async isAllowed(id) { id = norm(id); if (!ID_OK.test(id)) return false; return (await call({ action: "check", id })).allowed; },
+    async hasVoted(id) { return (await call({ action: "check", id: norm(id) })).voted; },
+    // The server does the "already voted?" check and the write in one locked step (saveBallot),
+    // so claimVoter only remembers the ID here.
+    async claimVoter(id) { this._id = norm(id); return true; },
+    async saveBallot(choices) {
+      try { await call({ action: "vote", id: this._id, choices }); }
+      catch (e) { throw new Error(e.message === "already voted" ? "This ID has already voted." : e.message); }
+    },
+    async signIn(email, password) {
+      pw = password;
+      try { await adminCall({ action: "login" }); }
+      catch (e) { pw = null; throw new Error("Wrong password."); }
+      try { sessionStorage.setItem("sheetsPw", pw); } catch {}
+    },
+    signOut() { pw = null; try { sessionStorage.clear(); } catch {} },
+    signedIn: () => !!pw,
+    async listParticipants() { return (await adminCall({ action: "list", what: "participants" })).items; },
+    async listVoters() { return (await adminCall({ action: "list", what: "voters" })).items; },
+    async loadBallots() { return (await adminCall({ action: "list", what: "ballots" })).items; },
+    async addParticipants(ids) { for (let i = 0; i < ids.length; i += 2000) await adminCall({ action: "add", ids: ids.slice(i, i + 2000) }); },
+    async removeParticipants(ids) { for (let i = 0; i < ids.length; i += 2000) await adminCall({ action: "remove", ids: ids.slice(i, i + 2000) }); }
+  };
+
+  window.VoteStore = sx ? sheetsStore : {
+    norm, parseIds, configRangesText, isElectionOpen, setElectionOpen, isAllowed, hasVoted, claimVoter, saveBallot,
     signIn, signOut, signedIn, listParticipants, listVoters, loadBallots, addParticipants, removeParticipants
   };
 })();

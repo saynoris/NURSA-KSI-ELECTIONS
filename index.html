@@ -150,7 +150,6 @@
 <footer>
   <div class="motto"><span class="cross">&#10010;</span> Service and Care to Humanity</div>
   <div><b>NURSA</b> &middot; Valley View University, Kumasi</div>
-  <a href="admin.html">Admin</a>
 </footer>
 
 <script src="config.js"></script>
@@ -163,7 +162,7 @@
 
   document.title = C.title + " | NURSA";
   $("title").textContent = C.title;
-  if (!C.firebase) $("demo").classList.remove("hidden");
+  if (!(C.firebase || C.sheets)) $("demo").classList.remove("hidden");
 
   function setStep(n) {
     [1, 2, 3].forEach(i => {
