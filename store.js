@@ -124,6 +124,13 @@
     if (!r.ok) await bad(r);
   }
 
+  // ---------- Admin passcode (used when no Firebase login is available) ----------
+  async function hashPass(p) {
+    const d = new TextEncoder().encode("nursa-admin:" + String(p).trim());
+    const b = await crypto.subtle.digest("SHA-256", d);
+    return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+  }
+
   // ---------- Election open/closed switch ----------
   async function isElectionOpen() {
     if (!fb) return ls.get("electionOpen", true);
@@ -202,7 +209,7 @@
   }
 
   window.VoteStore = {
-    norm, parseIds, configRangesText, isElectionOpen, setElectionOpen, isAllowed, hasVoted, claimVoter, saveBallot,
+    norm, parseIds, configRangesText, hashPass, isElectionOpen, setElectionOpen, isAllowed, hasVoted, claimVoter, saveBallot,
     signIn, signOut, signedIn, listParticipants, listVoters, loadBallots, addParticipants, removeParticipants
   };
 })();

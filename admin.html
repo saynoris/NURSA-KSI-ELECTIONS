@@ -23,12 +23,51 @@
   .bar { background:#e7ecfb; border-radius:6px; height:16px; margin:3px 0 10px; } .bar > div { background:var(--accent); height:100%; border-radius:6px; }
   .ids { max-height:200px; overflow:auto; font-family:monospace; font-size:.85rem; background:#f7f8fc; border-radius:8px; padding:8px; }
   .stat { display:inline-block; background:#eef2ff; border-radius:10px; padding:8px 14px; margin:0 8px 8px 0; }
+  #fatal { display:none; position:fixed; left:12px; right:12px; top:12px; z-index:99; background:#fdecec; color:#8e1b1b; border:2px solid #c62828; border-radius:12px; padding:14px 16px; font:14px/1.45 system-ui,sans-serif; box-shadow:0 6px 20px rgba(0,0,0,.2); }
+  #fatal b { display:block; margin-bottom:4px; } #fatal code { background:#fff; padding:1px 5px; border-radius:4px; word-break:break-all; }
 </style>
 </head>
 <body>
+<div id="fatal" role="alert"></div>
+<script>
+(function () {
+  var box = function () { return document.getElementById("fatal"); };
+  function show(title, detail) {
+    var b = box(); if (!b || b.style.display === "block") return;   // first error wins
+    b.innerHTML = "<b>" + title + "</b>" + detail; b.style.display = "block";
+  }
+  window.addEventListener("error", function (e) {
+    var t = e.target;
+    if (t && t.tagName === "SCRIPT") {
+      show("A file failed to load: " + (t.getAttribute("src") || ""), "Make sure <code>" + (t.getAttribute("src") || "") + "</code> was uploaded to the same folder as this page, then refresh.");
+    } else if (e.message && /Unexpected|Invalid|missing/i.test(e.message) && /config\.js/.test(e.filename || "")) {
+      show("There is a typing mistake in config.js", "Line " + e.lineno + ": <code>" + e.message + "</code><br>Usually a missing comma, quote or bracket on or just above that line.");
+    } else if (e.message) {
+      show("Something went wrong", "<code>" + e.message + "</code>");
+    }
+  }, true);
+  window.addEventListener("load", function () {
+    if (box() && box().style.display === "block") return;
+    if (!window.VOTE_CONFIG) show("config.js did not load correctly", "Open <code>config.js</code> and look for a missing comma, quote or bracket (the first error is usually just above where it points). Then refresh.");
+    else if (!window.VoteStore) show("store.js did not load correctly", "Upload <code>store.js</code> next to this page and refresh.");
+  });
+})();
+</script>
 <main>
   <h1>Admin</h1>
   <div id="demo" class="card muted hidden">Demo mode: data is stored only in this browser. Connect Firebase (see README) for real voting.</div>
+
+  <section id="gate" class="card hidden">
+    <h2 id="gate-title">Enter admin passcode</h2>
+    <p class="muted" id="gate-text"></p>
+    <input id="gate-pw" type="password" placeholder="Passcode" autocomplete="current-password">
+    <button id="gate-go">Unlock</button>
+    <div id="gate-msg" class="err"></div>
+    <div id="gate-out" class="hidden">
+      <p class="muted">Copy this whole line into <code>config.js</code> (inside the settings, before <code>positions</code>), save, upload it, then reload this page:</p>
+      <textarea id="gate-hash" readonly style="min-height:70px"></textarea>
+    </div>
+  </section>
 
   <section id="login" class="card hidden">
     <h2>Sign in</h2>
@@ -92,11 +131,44 @@ const show = (el, on) => el.classList.toggle("hidden", !on);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let participants = [], lastResults = null, nonVoters = [];
 
+const PASS_HASH = C.adminPasscodeHash || "";
+const unlocked = () => { try { return sessionStorage.getItem("adminUnlocked") === "1"; } catch (e) { return false; } };
+function gateNeeded() { return (!!PASS_HASH || !C.firebase) && !(PASS_HASH && unlocked()); }
+function showGate() {
+  show($("gate"), true); show($("login"), false); show($("app"), false);
+  if (PASS_HASH) {
+    $("gate-title").textContent = "Enter admin passcode";
+    $("gate-text").textContent = "This area is for the NURSA Electoral Commission only.";
+    $("gate-go").textContent = "Unlock";
+  } else {
+    $("gate-title").textContent = "Set an admin passcode";
+    $("gate-text").textContent = "No passcode is set yet, so the admin tools are locked. Choose a passcode (at least 8 characters) to create the line for config.js.";
+    $("gate-go").textContent = "Create passcode";
+  }
+}
+$("gate-go").onclick = async () => {
+  const m = $("gate-msg"); m.textContent = "";
+  const pw = $("gate-pw").value.trim();
+  if (!pw) { m.textContent = "Please type a passcode."; return; }
+  if (!PASS_HASH) {
+    if (pw.length < 8) { m.textContent = "Use at least 8 characters."; return; }
+    $("gate-hash").value = 'adminPasscodeHash: "' + await S.hashPass(pw) + '",';
+    show($("gate-out"), true); return;
+  }
+  if ((await S.hashPass(pw)) === PASS_HASH) {
+    try { sessionStorage.setItem("adminUnlocked", "1"); } catch (e) {}
+    $("gate-pw").value = ""; start();
+  } else { await new Promise(r => setTimeout(r, 1000)); m.textContent = "Wrong passcode."; }
+};
+$("gate-pw").addEventListener("keydown", e => { if (e.key === "Enter") $("gate-go").click(); });
+
 function start() {
   show($("demo"), !C.firebase);
+  if (gateNeeded()) { showGate(); return; }
+  show($("gate"), false);
   const ok = S.signedIn();
   show($("login"), !ok); show($("app"), ok);
-  show($("out"), !!C.firebase);
+  show($("out"), !!C.firebase || !!PASS_HASH);
   if (ok) { refreshList(); refreshStatus(); }
 }
 let electionOpen = true;
@@ -125,7 +197,7 @@ $("signin").onclick = async () => {
   catch (e) { $("login-msg").textContent = e.message; }
 };
 $("pw").addEventListener("keydown", e => { if (e.key === "Enter") $("signin").click(); });
-$("out").onclick = () => { S.signOut(); start(); };
+$("out").onclick = () => { S.signOut(); try { sessionStorage.removeItem("adminUnlocked"); } catch (e) {} start(); };
 
 $("t-part").onclick = () => tab(true); $("t-res").onclick = () => tab(false);
 function tab(p) {
