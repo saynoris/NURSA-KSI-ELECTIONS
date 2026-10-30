@@ -44,13 +44,13 @@ window.VOTE_CONFIG = {
   // Format: prefix + number. Also shown pre-filled in the admin page for convenience.
   allowedRanges: [
     { prefix: "224NSK", from: 1100001, to: 1100300 },
-    { prefix: "225NSK", from: 0100001,  to: 0100300 },
-    { prefix: "226NSK", from: 0100001,  to: 0100150 },
-    { prefix: "227NSK", from: 0100001,  to: 0100120 },
-    { prefix: "225NSK", from: 0100001,  to: 100200 },
-    { prefix: "226NSK", from: 0100001,  to: 010099 },
-    { prefix: "226NSK", from: 0300001,  to: 0300100 },
-    { prefix: "227NSK", from: 0400001,  to: 0400300 },
-    { prefix: "227NSK", from: 0300001,  to: 0100200 }
+    { prefix: "225NSK", from: 0100001, to: 0100300 },
+    { prefix: "226NSK", from: 0100001, to: 0100150 },
+    { prefix: "227NSK", from: 0100001, to: 0100120 },
+    { prefix: "225NSK", from: 0100001, to: 1000200 },
+    { prefix: "226NSK", from: 0100001, to: 0100099 },
+    { prefix: "226NSK", from: 0300001, to: 0300100 },
+    { prefix: "227NSK", from: 0400001, to: 0400300 },
+    { prefix: "227NSK", from: 0300001, to: 0100200 }
   ]
 };
