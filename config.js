@@ -52,6 +52,7 @@ window.VOTE_CONFIG = {
     "226NSK0100001-226NSK0100150",
     "227NSK0100001-227NSK0100120",
     "226NSK0300001-226NSK0300100",
+    "226NSK0400001-226NSK0400200",
     "227NSK0400001-227NSK0400300"
     // Two ranges were left out until confirmed (they looked like typing mistakes):
     //   "225NSK0100001-225NSK1000200"  (end is 900,000 IDs away; if you meant 0100200 it is already covered above)
