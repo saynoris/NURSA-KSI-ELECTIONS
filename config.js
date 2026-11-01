@@ -1,6 +1,6 @@
 // ====== EDIT THIS FILE ======
 window.VOTE_CONFIG = {
-  title: "NURSA Executive Election 2026/2027",
+  title: "NURSA Executive Re-election 2026/2027",
 
   // Each candidate: name + photo path. Replace the sample files in /photos with real pictures
   // (keep the same file name, or change the path here, e.g. "photos/evans.jpg").
