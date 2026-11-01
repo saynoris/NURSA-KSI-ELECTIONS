@@ -91,9 +91,36 @@
   footer .cross { color:var(--red); font-weight:900; }
 
   @media (max-width:420px) { h1 { font-size:1.4rem; } .logo { width:92px; height:92px; } }
+  #fatal { display:none; position:fixed; left:12px; right:12px; top:12px; z-index:99; background:#fdecec; color:#8e1b1b; border:2px solid #c62828; border-radius:12px; padding:14px 16px; font:14px/1.45 system-ui,sans-serif; box-shadow:0 6px 20px rgba(0,0,0,.2); }
+  #fatal b { display:block; margin-bottom:4px; } #fatal code { background:#fff; padding:1px 5px; border-radius:4px; word-break:break-all; }
 </style>
 </head>
 <body>
+<div id="fatal" role="alert"></div>
+<script>
+(function () {
+  var box = function () { return document.getElementById("fatal"); };
+  function show(title, detail) {
+    var b = box(); if (!b || b.style.display === "block") return;   // first error wins
+    b.innerHTML = "<b>" + title + "</b>" + detail; b.style.display = "block";
+  }
+  window.addEventListener("error", function (e) {
+    var t = e.target;
+    if (t && t.tagName === "SCRIPT") {
+      show("A file failed to load: " + (t.getAttribute("src") || ""), "Make sure <code>" + (t.getAttribute("src") || "") + "</code> was uploaded to the same folder as this page, then refresh.");
+    } else if (e.message && /Unexpected|Invalid|missing/i.test(e.message) && /config\.js/.test(e.filename || "")) {
+      show("There is a typing mistake in config.js", "Line " + e.lineno + ": <code>" + e.message + "</code><br>Usually a missing comma, quote or bracket on or just above that line.");
+    } else if (e.message) {
+      show("Something went wrong", "<code>" + e.message + "</code>");
+    }
+  }, true);
+  window.addEventListener("load", function () {
+    if (box() && box().style.display === "block") return;
+    if (!window.VOTE_CONFIG) show("config.js did not load correctly", "Open <code>config.js</code> and look for a missing comma, quote or bracket (the first error is usually just above where it points). Then refresh.");
+    else if (!window.VoteStore) show("store.js did not load correctly", "Upload <code>store.js</code> next to this page and refresh.");
+  });
+})();
+</script>
 
 <header class="hero">
   <img class="logo" src="logo.jpg" alt="Valley View University Nursing Students Association logo">
@@ -162,7 +189,7 @@
 
   document.title = C.title + " | NURSA";
   $("title").textContent = C.title;
-  if (!(C.firebase || C.sheets)) $("demo").classList.remove("hidden");
+  if (!C.firebase && !C.sheets) $("demo").classList.remove("hidden");
 
   function setStep(n) {
     [1, 2, 3].forEach(i => {
@@ -174,13 +201,19 @@
   }
 
   // ---- one vote per browser + open/closed switch ----
-  const VOTED_KEY = "nursa_voted:" + C.title;
-  const votedHere = () => { try { return localStorage.getItem(VOTED_KEY) === "1"; } catch (e) { return false; } };
-  const markVoted = () => { try { localStorage.setItem(VOTED_KEY, "1"); } catch (e) {} };
+  // The "voted" memory is per election round: resetting the election bumps the round, which unlocks every phone.
+  let ROUND = 1;
+  const keyBase = "nursa_voted:" + C.title + (C.sheets ? ":sheets" : C.firebase ? ":" + C.firebase.projectId : ":demo");
+  const votedKey = () => keyBase + ":r" + ROUND;
+  const votedHere = () => { try { return localStorage.getItem(votedKey()) === "1"; } catch (e) { return false; } };
+  const markVoted = () => { try { localStorage.setItem(votedKey(), "1"); } catch (e) {} };
 
   async function isClosed() {
     if (C.closesAt && new Date() > new Date(C.closesAt)) return true;
-    try { return !(await S.isElectionOpen()); } catch (e) { return false; }
+    try {
+      const st = S.electionStatus ? await S.electionStatus() : { open: await S.isElectionOpen(), round: 1 };
+      ROUND = st.round || 1; return !st.open;
+    } catch (e) { return false; }
   }
   function showLocked(kind) {
     ["step-id", "step-ballot", "step-done"].forEach(id => $(id).classList.add("hidden"));
