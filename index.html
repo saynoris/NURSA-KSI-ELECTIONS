@@ -229,7 +229,7 @@
     $("lk-title").textContent = closedNow ? "Voting is closed" : "Voting is ongoing";
     $("lk-text").textContent = closedNow
       ? (voted ? "Thank you. Your vote was recorded, and the election is now closed." : "The election is not open right now. Please check with the NURSA Electoral Commission.")
-      : "A vote has already been cast from this browser, so no further entry is allowed here. Each student may vote only once.";
+      : "A vote has already been cast by this user, so no further entry is allowed here. Each student may vote only once.";
     $("step-locked").classList.remove("hidden");
     if (voted) setStep(3);
   }
