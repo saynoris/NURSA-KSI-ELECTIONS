@@ -27,9 +27,9 @@ window.VOTE_CONFIG = {
         { name: "Angelina Afriyie Appiah", photo: "women-1.jpeg" },
         { name: "Grace Serwaa Mintah", photo: "women-2.jpg" } ] },
     { id: "editor", title: "Editor", candidates: [
-        { name: "Donnel Agyei", photo: "editor-1.jpg" } ] },
+        { name: "Daniel Agyei", photo: "editor-1.jpg" } ] },
     { id: "sports", title: "Sports Commissioner", candidates: [
-        { name: "Gilbert Nyomahye", photo: "sports-1.jpeg" } ] }
+        { name: "Gilbert Nyamekye", photo: "sports-1.jpeg" } ] }
   ],
 
   // Optional: voting closes at this time (ISO string, e.g. "2026-11-05T18:00:00Z") or null.
