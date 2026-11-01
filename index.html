@@ -144,6 +144,10 @@
     <p class="sub">Enter your student ID to confirm you are eligible to vote. Each ID can vote only once.</p>
     <label class="field" for="sid">Student ID number</label>
     <input id="sid" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="e.g. 224NSK1100001">
+    <div id="code-wrap" class="hidden" style="margin-top:14px">
+      <label class="field" for="scode">Voting code</label>
+      <input id="scode" type="text" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="6-character code sent to your phone">
+    </div>
     <button id="go">Continue</button>
     <div id="id-msg" class="msg err" role="alert"></div>
   </section>
@@ -202,7 +206,7 @@
 
   // ---- one vote per browser + open/closed switch ----
   // The "voted" memory is per election round: resetting the election bumps the round, which unlocks every phone.
-  let ROUND = 1;
+  let ROUND = 1, NEEDCODE = false;
   const keyBase = "nursa_voted:" + C.title + (C.sheets ? ":sheets" : C.firebase ? ":" + C.firebase.projectId : ":demo");
   const votedKey = () => keyBase + ":r" + ROUND;
   const votedHere = () => { try { return localStorage.getItem(votedKey()) === "1"; } catch (e) { return false; } };
@@ -212,7 +216,9 @@
     if (C.closesAt && new Date() > new Date(C.closesAt)) return true;
     try {
       const st = S.electionStatus ? await S.electionStatus() : { open: await S.isElectionOpen(), round: 1 };
-      ROUND = st.round || 1; return !st.open;
+      ROUND = st.round || 1; NEEDCODE = !!st.codes;
+      $("code-wrap").classList.toggle("hidden", !NEEDCODE);
+      return !st.open;
     } catch (e) { return false; }
   }
   function showLocked(kind) {
@@ -240,7 +246,9 @@
     try {
       if (await isClosed()) { showLocked("closed"); return; }
       if (votedHere()) { showLocked("voted"); return; }
-      if (!(await S.isAllowed(id))) { msg.textContent = "This ID is not eligible to vote."; return; }
+      const code = $("scode").value.trim();
+      if (NEEDCODE && !code) { msg.textContent = "Please enter the voting code that was sent to your phone."; return; }
+      if (!(await S.isAllowed(id, code))) { msg.textContent = NEEDCODE ? "The student ID and voting code do not match. Check both and try again." : "This ID is not eligible to vote."; return; }
       voterHash = S.norm(id);
       if (await S.hasVoted(voterHash)) { msg.textContent = "This ID has already voted."; return; }
       buildBallot();
@@ -251,6 +259,7 @@
     finally { $("go").disabled = false; $("go").textContent = "Continue"; }
   };
   $("sid").addEventListener("keydown", e => { if (e.key === "Enter") $("go").click(); });
+  $("scode").addEventListener("keydown", e => { if (e.key === "Enter") $("go").click(); });
 
   const cand = c => typeof c === "string" ? { name: c, photos: [] } : { name: c.name, photos: [].concat(c.photo || []) };
 

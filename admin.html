@@ -85,6 +85,32 @@
       <div id="status-msg" class="muted"></div>
       <p class="muted">When closed, voters see "Voting is closed" and nobody can submit a vote. You can reopen at any time.</p>
     </div>
+    <div class="card" id="revote-card">
+      <h2>Let an ID vote again</h2>
+      <p class="muted">Use this if a student's vote did not go through, or you need to give them another chance. It removes the ID from the "already voted" list.</p>
+      <p class="muted"><b>Important:</b> a ballot that was already saved cannot be removed, because ballots are anonymous. If the student's first vote did go through, it will still be counted. The student also needs a different phone or browser (or a private window), because the first one remembers the vote.</p>
+      <input id="rv-id" type="text" placeholder="Student ID, e.g. 224NSK1100005">
+      <button id="rv-go" class="danger">Let this ID vote again</button>
+      <div id="rv-msg" class="muted"></div>
+    </div>
+    <div class="card" id="codes-card">
+      <h2>Voting codes (send to each voter's phone)</h2>
+      <p class="muted">Each student gets a personal 6-character code. To vote they need their student ID <b>and</b> their code, so nobody can vote with someone else's ID.</p>
+      <div id="codes-stats" class="stat">Checking...</div>
+      <p><b>1. Phone numbers.</b> One student per line: <code>ID, phone</code> (or choose a .csv file with those two columns).</p>
+      <input id="ph-file" type="file" accept=".csv,.txt,text/plain,text/csv">
+      <textarea id="ph-text" style="min-height:90px" placeholder="224NSK1100001, 0241234567&#10;224NSK1100002, 0551234567"></textarea>
+      <button id="ph-save" class="sec">Save phone numbers</button>
+      <p><b>2. Make codes.</b></p>
+      <button id="gen-codes" class="sec">Generate codes (for those without one)</button>
+      <button id="gen-all" class="danger">New codes for everyone</button>
+      <p><b>3. Text message.</b> <span class="muted">{code} {id} and {link} are filled in for each student.</span></p>
+      <textarea id="sms-text" style="min-height:80px"></textarea>
+      <button id="dl-sms">Download SMS list (CSV)</button>
+      <p><b>4. Switch it on.</b> <span class="muted">Do this after the texts are sent. Until then voting works with the ID alone.</span></p>
+      <button id="toggle-codes" disabled>...</button>
+      <div id="codes-msg" class="muted"></div>
+    </div>
     <div class="card" id="reset-card" style="border-top:4px solid #c62828">
       <h2>Start a new election</h2>
       <p class="muted">Erases all votes and all "already voted" records so everyone can vote again, and unlocks phones that already voted. The old votes are first saved as backup tabs in your Google Sheet, and the voter list is kept. Voting is open again afterwards.</p>
@@ -176,7 +202,9 @@ function start() {
   show($("login"), !ok); show($("app"), ok);
   show($("out"), !!C.firebase || !!PASS_HASH || !!C.sheets);
   show($("reset-card"), !!S.resetElection);
-  if (ok) { refreshList(); refreshStatus(); }
+  show($("codes-card"), !!S.exportCodes);
+  show($("revote-card"), !!S.allowRevote);
+  if (ok) { refreshList(); refreshStatus(); if (S.exportCodes) refreshCodes(); }
 }
 if (C.sheets) { $("email").classList.add("hidden"); $("pw").placeholder = "Admin password"; }   // Google Sheets mode: password only
 let electionOpen = true;
@@ -309,6 +337,86 @@ function download(name, rows) {
 }
 $("dl-res").onclick = () => download("results.csv", lastResults);
 $("dl-non").onclick = () => download("not-voted.csv", [["Student ID"], ...nonVoters]);
+
+// ----- Voting codes (Google Sheets mode) -----
+let codesOn = false;
+const SMS_KEY = "nursa_sms_template";
+const DEFAULT_SMS = "NURSA election: your voting code is {code}. Open {link} , enter your student ID and this code to vote. One vote per student. Do not share your code.";
+try { $("sms-text").value = localStorage.getItem(SMS_KEY) || DEFAULT_SMS; } catch (e) { $("sms-text").value = DEFAULT_SMS; }
+$("sms-text").oninput = () => { try { localStorage.setItem(SMS_KEY, $("sms-text").value); } catch (e) {} };
+const cmsg = (t, cls) => { const m = $("codes-msg"); m.textContent = t; m.className = cls || "muted"; };
+async function refreshCodes() {
+  try {
+    const rows = await S.exportCodes(), st = await S.electionStatus();
+    codesOn = !!st.codes;
+    const withCode = rows.filter(r => r[2]).length, withPh = rows.filter(r => r[1]).length;
+    $("codes-stats").innerHTML = `${rows.length} voters &middot; ${withPh} with phone &middot; ${withCode} with code &middot; <b style="color:${codesOn ? "#1b7f3b" : "#c62828"}">Codes ${codesOn ? "REQUIRED" : "not required"}</b>`;
+    const t = $("toggle-codes"); t.disabled = false;
+    t.textContent = codesOn ? "Stop requiring codes" : "Require codes to vote";
+    t.className = codesOn ? "danger" : "";
+  } catch (e) { $("codes-stats").textContent = e.message; }
+}
+$("ph-file").onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => { $("ph-text").value = ($("ph-text").value ? $("ph-text").value + "\n" : "") + String(rd.result).trim(); cmsg(`Loaded ${f.name}. Click Save phone numbers.`); };
+  rd.readAsText(f); e.target.value = "";
+};
+$("ph-save").onclick = async () => {
+  const pairs = [];
+  String($("ph-text").value).split(/\r?\n/).forEach(l => {
+    const c = l.split(/[,\t;]/).map(x => x.trim().replace(/^"|"$/g, ""));
+    if (c.length >= 2 && c[0] && c[1].replace(/\D/g, "").length >= 9) pairs.push([c[0], c[1]]);
+  });
+  if (!pairs.length) { cmsg("No lines like  ID, phone  were found.", "err"); return; }
+  try {
+    cmsg("Saving...");
+    const r = await S.setPhones(pairs);
+    cmsg(`Saved ${r.updated} phone number(s).` + (r.unknownCount ? ` ${r.unknownCount} ID(s) are not in the voter list and were skipped (e.g. ${r.unknown.slice(0, 3).join(", ")}).` : ""), r.unknownCount ? "err" : "ok");
+    $("ph-text").value = ""; refreshCodes();
+  } catch (e) { cmsg(e.message, "err"); }
+};
+$("gen-codes").onclick = async () => {
+  try { cmsg("Working..."); const n = await S.generateCodes(false); cmsg(`Made ${n} new code(s).`, "ok"); refreshCodes(); } catch (e) { cmsg(e.message, "err"); }
+};
+$("gen-all").onclick = async () => {
+  if (!confirm("Replace EVERY student's code with a new one? Codes you already sent will stop working.")) return;
+  try { cmsg("Working..."); const n = await S.generateCodes(true); cmsg(`Made ${n} new code(s). Send them out again.`, "ok"); refreshCodes(); } catch (e) { cmsg(e.message, "err"); }
+};
+const intlPhone = p => { const d = String(p).replace(/\D/g, ""); if (d.length === 12 && d.startsWith("233")) return d; if (d.length === 10 && d[0] === "0") return "233" + d.slice(1); if (d.length === 9) return "233" + d; return d; };
+$("dl-sms").onclick = async () => {
+  try {
+    const rows = await S.exportCodes();
+    const link = location.href.replace(/[?#].*$/, "").replace(/admin\.html$/i, "index.html").replace(/\/$/, "/");
+    const tpl = $("sms-text").value || DEFAULT_SMS;
+    const ready = rows.filter(r => r[1] && r[2]);
+    if (!ready.length) { cmsg("Nothing to download yet: save phone numbers and generate codes first.", "err"); return; }
+    const out = [["Student ID", "Phone", "Phone (233 format)", "Code", "Message"]];
+    ready.forEach(r => out.push([r[0], r[1], intlPhone(r[1]), r[2], tpl.replace(/\{code\}/g, r[2]).replace(/\{id\}/g, r[0]).replace(/\{link\}/g, link)]));
+    download("sms-list.csv", out);
+    const miss = rows.length - ready.length;
+    cmsg(`Downloaded ${ready.length} message(s).` + (miss ? ` ${miss} student(s) skipped because they have no phone number or code.` : ""), miss ? "err" : "ok");
+  } catch (e) { cmsg(e.message, "err"); }
+};
+$("toggle-codes").onclick = async () => {
+  const on = !codesOn;
+  if (on && !confirm("Require codes now? Students will need their code to vote. Only do this after the codes have been sent.")) return;
+  try { await S.setCodesRequired(on); cmsg(on ? "Codes are now required." : "Codes are no longer required.", "ok"); refreshCodes(); } catch (e) { cmsg(e.message, "err"); }
+};
+
+// ----- Let an ID vote again -----
+$("rv-go").onclick = async () => {
+  const m = $("rv-msg"), id = S.norm($("rv-id").value);
+  if (!id) { m.textContent = "Type the student ID first."; m.className = "err"; return; }
+  if (!confirm(`Let ${id} vote again?\n\nIf this student's first vote was saved, it will STILL be counted, so they would have two votes. Continue?`)) return;
+  m.className = "muted"; m.textContent = "Working...";
+  try {
+    const n = await S.allowRevote(id);
+    if (n) { m.textContent = `${id} can vote again. Ask the student to use a different phone or browser (or a private window).`; m.className = "ok"; }
+    else { m.textContent = `${id} is not on the "already voted" list, so there was nothing to remove.`; m.className = "err"; }
+    $("rv-id").value = "";
+  } catch (e) { m.textContent = e.message; m.className = "err"; }
+};
 
 start();
 </script>

@@ -234,26 +234,26 @@
   try { pw = sessionStorage.getItem("sheetsPw"); } catch (e) {}
   const adminCall = p => call({ ...p, pw });
   let lastCheck = null;                                       // isAllowed + hasVoted share one request
-  async function checkId(id) {
-    id = norm(id);
-    if (lastCheck && lastCheck.id === id && Date.now() - lastCheck.t < 20000) return lastCheck.v;
-    const v = await call({ action: "check", id });
-    lastCheck = { id, v, t: Date.now() };
+  async function checkId(id, code) {
+    id = norm(id); code = String(code || "");
+    if (lastCheck && lastCheck.id === id && lastCheck.code === code && Date.now() - lastCheck.t < 20000) return lastCheck.v;
+    const v = await call({ action: "check", id, code });
+    lastCheck = { id, code, v, t: Date.now() };
     return v;
   }
 
   const sheetsStore = {
     norm, parseIds, configRangesText, hashPass,
-    async electionStatus() { const j = await call({ action: "status" }); return { open: j.open !== false, round: j.round || 1 }; },
+    async electionStatus() { const j = await call({ action: "status" }); return { open: j.open !== false, round: j.round || 1, codes: !!j.codes }; },
     async isElectionOpen() { return (await this.electionStatus()).open; },
     async setElectionOpen(open) { await adminCall({ action: "setOpen", open: !!open }); },
-    async isAllowed(id) { id = norm(id); if (!ID_OK.test(id)) return false; return !!(await checkId(id)).allowed; },
-    async hasVoted(id) { return !!(await checkId(id)).voted; },
+    async isAllowed(id, code) { id = norm(id); if (!ID_OK.test(id)) return false; this._code = code || ""; return !!(await checkId(id, code)).allowed; },
+    async hasVoted(id) { return !!(await checkId(id, this._code)).voted; },
     // The server does the "already voted?" check and the write in one locked step (saveBallot),
     // so claimVoter only remembers the ID here.
     async claimVoter(id) { this._id = norm(id); lastCheck = null; return true; },
     async saveBallot(choices) {
-      try { await call({ action: "vote", id: this._id, choices }); }
+      try { await call({ action: "vote", id: this._id, choices, code: this._code || "" }); }
       catch (e) { throw new Error(e.message === "already voted" ? "This ID has already voted." : e.message); }
     },
     async signIn(email, password) {
@@ -273,6 +273,18 @@
     async loadBallots() { return (await adminCall({ action: "list", what: "ballots" })).items; },
     async addParticipants(ids) { for (let i = 0; i < ids.length; i += 2000) await adminCall({ action: "add", ids: ids.slice(i, i + 2000) }); },
     async removeParticipants(ids) { for (let i = 0; i < ids.length; i += 2000) await adminCall({ action: "remove", ids: ids.slice(i, i + 2000) }); },
+    async allowRevote(id) {
+      try { return (await adminCall({ action: "unvote", id: norm(id) })).removed; }
+      catch (e) { throw new Error(/unknown action/i.test(e.message) ? "Your Google script has not been updated yet. In Apps Script choose Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy, then try again." : e.message); }
+    },
+    // voting codes (admin)
+    async setPhones(pairs) { return adminCall({ action: "setPhones", pairs }); },
+    async generateCodes(all) { return (await adminCall({ action: "genCodes", all: !!all })).made; },
+    async exportCodes() { return (await adminCall({ action: "exportCodes" })).items; },
+    async setCodesRequired(on) {
+      try { await adminCall({ action: "setCodes", on: !!on }); }
+      catch (e) { throw new Error(/unknown action/i.test(e.message) ? "Your Google script has not been updated yet. In Apps Script choose Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy, then try again." : e.message); }
+    },
     async resetElection() {
       try { await adminCall({ action: "reset" }); }
       catch (e) { throw new Error(/unknown action/i.test(e.message) ? "Your Google script has not been updated yet. In Apps Script choose Deploy > Manage deployments > Edit (pencil) > Version: New version > Deploy, then try again." : e.message); }
