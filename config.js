@@ -1,4 +1,4 @@
-// ====== EDIT THIS FILE ======
+S// ====== EDIT THIS FILE ======
 window.VOTE_CONFIG = {
   title: "NURSA Executive Re-election 2026/2027",
 
@@ -29,7 +29,7 @@ window.VOTE_CONFIG = {
     { id: "editor", title: "Editor", candidates: [
         { name: "Daniel Agyei", photo: "editor-1.jpg" } ] },
     { id: "sports", title: "Sports Commissioner", candidates: [
-        { name: "Gilbert Nyamekye", photo: "sport-1.jpeg" } ] }
+        { name: "Gilbert Nyamekye", photo: "sports-1.jpeg" } ] }
   ],
 
   // Optional: voting closes at this time (ISO string, e.g. "2026-11-05T18:00:00Z") or null.
