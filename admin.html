@@ -23,12 +23,51 @@
   .bar { background:#e7ecfb; border-radius:6px; height:16px; margin:3px 0 10px; } .bar > div { background:var(--accent); height:100%; border-radius:6px; }
   .ids { max-height:200px; overflow:auto; font-family:monospace; font-size:.85rem; background:#f7f8fc; border-radius:8px; padding:8px; }
   .stat { display:inline-block; background:#eef2ff; border-radius:10px; padding:8px 14px; margin:0 8px 8px 0; }
+  #fatal { display:none; position:fixed; left:12px; right:12px; top:12px; z-index:99; background:#fdecec; color:#8e1b1b; border:2px solid #c62828; border-radius:12px; padding:14px 16px; font:14px/1.45 system-ui,sans-serif; box-shadow:0 6px 20px rgba(0,0,0,.2); }
+  #fatal b { display:block; margin-bottom:4px; } #fatal code { background:#fff; padding:1px 5px; border-radius:4px; word-break:break-all; }
 </style>
 </head>
 <body>
+<div id="fatal" role="alert"></div>
+<script>
+(function () {
+  var box = function () { return document.getElementById("fatal"); };
+  function show(title, detail) {
+    var b = box(); if (!b || b.style.display === "block") return;   // first error wins
+    b.innerHTML = "<b>" + title + "</b>" + detail; b.style.display = "block";
+  }
+  window.addEventListener("error", function (e) {
+    var t = e.target;
+    if (t && t.tagName === "SCRIPT") {
+      show("A file failed to load: " + (t.getAttribute("src") || ""), "Make sure <code>" + (t.getAttribute("src") || "") + "</code> was uploaded to the same folder as this page, then refresh.");
+    } else if (e.message && /Unexpected|Invalid|missing/i.test(e.message) && /config\.js/.test(e.filename || "")) {
+      show("There is a typing mistake in config.js", "Line " + e.lineno + ": <code>" + e.message + "</code><br>Usually a missing comma, quote or bracket on or just above that line.");
+    } else if (e.message) {
+      show("Something went wrong", "<code>" + e.message + "</code>");
+    }
+  }, true);
+  window.addEventListener("load", function () {
+    if (box() && box().style.display === "block") return;
+    if (!window.VOTE_CONFIG) show("config.js did not load correctly", "Open <code>config.js</code> and look for a missing comma, quote or bracket (the first error is usually just above where it points). Then refresh.");
+    else if (!window.VoteStore) show("store.js did not load correctly", "Upload <code>store.js</code> next to this page and refresh.");
+  });
+})();
+</script>
 <main>
   <h1>Admin</h1>
   <div id="demo" class="card muted hidden">Demo mode: data is stored only in this browser. Connect Firebase (see README) for real voting.</div>
+
+  <section id="gate" class="card hidden">
+    <h2 id="gate-title">Enter admin passcode</h2>
+    <p class="muted" id="gate-text"></p>
+    <input id="gate-pw" type="password" placeholder="Passcode" autocomplete="current-password">
+    <button id="gate-go">Unlock</button>
+    <div id="gate-msg" class="err"></div>
+    <div id="gate-out" class="hidden">
+      <p class="muted">Copy this whole line into <code>config.js</code> (inside the settings, before <code>positions</code>), save, upload it, then reload this page:</p>
+      <textarea id="gate-hash" readonly style="min-height:70px"></textarea>
+    </div>
+  </section>
 
   <section id="login" class="card hidden">
     <h2>Sign in</h2>
@@ -45,6 +84,12 @@
       <button id="toggle-election" disabled>...</button>
       <div id="status-msg" class="muted"></div>
       <p class="muted">When closed, voters see "Voting is closed" and nobody can submit a vote. You can reopen at any time.</p>
+    </div>
+    <div class="card" id="reset-card" style="border-top:4px solid #c62828">
+      <h2>Start a new election</h2>
+      <p class="muted">Erases all votes and all "already voted" records so everyone can vote again, and unlocks phones that already voted. The old votes are first saved as backup tabs in your Google Sheet, and the voter list is kept. Voting is open again afterwards.</p>
+      <button id="reset-election" class="danger">Reset election...</button>
+      <div id="reset-msg" class="muted"></div>
     </div>
     <div class="tabs">
       <button id="t-part" class="active">Participants</button>
@@ -92,14 +137,48 @@ const show = (el, on) => el.classList.toggle("hidden", !on);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 let participants = [], lastResults = null, nonVoters = [];
 
+const PASS_HASH = C.adminPasscodeHash || "";
+const unlocked = () => { try { return sessionStorage.getItem("adminUnlocked") === "1"; } catch (e) { return false; } };
+function gateNeeded() { if (C.sheets) return false; return (!!PASS_HASH || !C.firebase) && !(PASS_HASH && unlocked()); }
+function showGate() {
+  show($("gate"), true); show($("login"), false); show($("app"), false);
+  if (PASS_HASH) {
+    $("gate-title").textContent = "Enter admin passcode";
+    $("gate-text").textContent = "This area is for the NURSA Electoral Commission only.";
+    $("gate-go").textContent = "Unlock";
+  } else {
+    $("gate-title").textContent = "Set an admin passcode";
+    $("gate-text").textContent = "No passcode is set yet, so the admin tools are locked. Choose a passcode (at least 8 characters) to create the line for config.js.";
+    $("gate-go").textContent = "Create passcode";
+  }
+}
+$("gate-go").onclick = async () => {
+  const m = $("gate-msg"); m.textContent = "";
+  const pw = $("gate-pw").value.trim();
+  if (!pw) { m.textContent = "Please type a passcode."; return; }
+  if (!PASS_HASH) {
+    if (pw.length < 8) { m.textContent = "Use at least 8 characters."; return; }
+    $("gate-hash").value = 'adminPasscodeHash: "' + await S.hashPass(pw) + '",';
+    show($("gate-out"), true); return;
+  }
+  if ((await S.hashPass(pw)) === PASS_HASH) {
+    try { sessionStorage.setItem("adminUnlocked", "1"); } catch (e) {}
+    $("gate-pw").value = ""; start();
+  } else { await new Promise(r => setTimeout(r, 1000)); m.textContent = "Wrong passcode."; }
+};
+$("gate-pw").addEventListener("keydown", e => { if (e.key === "Enter") $("gate-go").click(); });
+
 function start() {
-  show($("demo"), !(C.firebase || C.sheets));
-  if (C.sheets) { $("email").style.display = "none"; $("pw").placeholder = "Admin password"; }
+  show($("demo"), !C.firebase && !C.sheets);
+  if (gateNeeded()) { showGate(); return; }
+  show($("gate"), false);
   const ok = S.signedIn();
   show($("login"), !ok); show($("app"), ok);
-  show($("out"), !!(C.firebase || C.sheets));
+  show($("out"), !!C.firebase || !!PASS_HASH || !!C.sheets);
+  show($("reset-card"), !!S.resetElection);
   if (ok) { refreshList(); refreshStatus(); }
 }
+if (C.sheets) { $("email").classList.add("hidden"); $("pw").placeholder = "Admin password"; }   // Google Sheets mode: password only
 let electionOpen = true;
 async function refreshStatus() {
   try {
@@ -126,10 +205,27 @@ $("signin").onclick = async () => {
   catch (e) { $("login-msg").textContent = e.message; }
 };
 $("pw").addEventListener("keydown", e => { if (e.key === "Enter") $("signin").click(); });
-$("out").onclick = () => { S.signOut(); start(); };
+$("out").onclick = () => { S.signOut(); try { sessionStorage.removeItem("adminUnlocked"); } catch (e) {} start(); };
+
+$("reset-election").onclick = async () => {
+  const m = $("reset-msg"); m.className = "muted"; m.textContent = "";
+  const typed = prompt("This will erase ALL votes cast so far and let everyone vote again.\nA backup of the old votes is kept in your Google Sheet.\n\nType RESET (capital letters) to continue:");
+  if (typed === null) return;
+  if (typed.trim() !== "RESET") { m.textContent = "Cancelled. You did not type RESET, so nothing was changed."; return; }
+  const b = $("reset-election"); b.disabled = true; m.textContent = "Resetting...";
+  try {
+    await S.resetElection();
+    m.textContent = "Done. All votes were cleared and a backup was saved. Voting is now OPEN. Use Close the election above if you are not ready to start."; m.className = "ok";
+    $("results").innerHTML = ""; lastResults = null; $("dl-res").classList.add("hidden"); $("dl-non").classList.add("hidden"); resultsLoaded = false;
+    await refreshStatus();
+  } catch (e) { m.textContent = e.message; m.className = "err"; }
+  finally { b.disabled = false; }
+};
 
 $("t-part").onclick = () => tab(true); $("t-res").onclick = () => tab(false);
+let resultsLoaded = false;
 function tab(p) {
+  if (!p && !resultsLoaded) { resultsLoaded = true; setTimeout(() => $("load").click(), 0); }
   show($("p-part"), p); show($("p-res"), !p);
   $("t-part").classList.toggle("active", p); $("t-res").classList.toggle("active", !p);
 }
@@ -193,12 +289,14 @@ $("load").onclick = async () => {
     lastResults = [["Position", "Option", "Votes"]];
     for (const p of C.positions) {
       const counts = {}; [...p.candidates.map(c => typeof c === "string" ? c : c.name), "Abstain"].forEach(n => counts[n] = 0);
-      ballots.forEach(b => { if (b[p.id] in counts) counts[b[p.id]]++; });
+      let other = 0;
+      ballots.forEach(b => { const v = b[p.id]; if (v in counts) counts[v]++; else if (v !== undefined && v !== "") other++; });
       const max = Math.max(1, ...Object.values(counts)), div = document.createElement("div");
       div.innerHTML = `<h3>${esc(p.title)}</h3>` + Object.entries(counts).map(([n, c]) => {
         lastResults.push([p.title, n, c]);
         return `<div>${esc(n)}: <b>${c}</b></div><div class="bar"><div style="width:${c / max * 100}%"></div></div>`;
       }).join("");
+      if (other) { lastResults.push([p.title, "Other (name not in config.js)", other]); div.innerHTML += `<p class="err"><b>${other}</b> vote(s) were for a name that is no longer in config.js (an old spelling?). They are not counted above. Put the old spelling back in config.js to see them.</p>`; }
       box.appendChild(div);
     }
     show($("dl-res"), true); show($("dl-non"), true);
