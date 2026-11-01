@@ -7,18 +7,18 @@ window.VOTE_CONFIG = {
   // A President/VP ticket has two photos: photo: ["photos/a.jpg", "photos/b.jpg"]
   positions: [
     { id: "president", title: "President & Vice President", candidates: [
-        { name: "Asare Frederick & Leah Hayford Freeman-Amoah", photo: ["president-2-1.svg", "president-2-2.jpg"] },
+        { name: "Asare Frederick & Leah Hayford Freeman-Amoah", photo: ["president-2-1.jpeg", "president-2-2.jpg"] },
         { name: "Augustina Abena Boakyewaa & Emmanuella Foriwaa", photo: ["president-1-1.jpg", "president-1-2.jpg"] } ] },
     { id: "secretary", title: "Secretary", candidates: [
-        { name: "Precious Opoku Ayei-wura", photo: "secretary-1.jpg" } ] },
+        { name: "Precious Opoku Agyeiwaa", photo: "secretary-1.jpg" } ] },
     { id: "orgsec", title: "Organizing Secretary", candidates: [
         { name: "Evans Opoku", photo: "orgsec-1.jpg" } ] },
     { id: "pro", title: "Public Relations Officer", candidates: [
         { name: "Abigail Frimpomaa Kromah", photo: "pro-1.jpg" } ] },
     { id: "finsec", title: "Financial Secretary", candidates: [
-        { name: "Harriet Appah-Tah", photo: "finsec-1.jpg" } ] },
+        { name: "Harriet Appiah", photo: "finsec-1.jpg" } ] },
     { id: "chaplain", title: "Chaplain", candidates: [
-        { name: "Abigail Gyetey", photo: "chaplain-1.jpg" } ] },
+        { name: "Abigail Gyekye", photo: "chaplain-1.jpg" } ] },
     { id: "sergeant", title: "Sergeant-at-Arms", candidates: [
         { name: "Agyemang Queena", photo: "sergeant-1.jpg" } ] },
     { id: "senate", title: "Senate Representative", candidates: [
